@@ -114,7 +114,7 @@ type role =
 type t = {
   remote_domid: int;
   remote_port: Port.t;
-  shared_page: Cstruct.t; (* the shared metadata *)
+  shared_page: Bytes.t; (* the shared metadata *)
   role: role;
   read: Cstruct.t; (* the ring where you read data from *)
   write: Cstruct.t; (* the ring where you write data to *)
