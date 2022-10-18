@@ -35,8 +35,8 @@ end
 
 (* GCC atomic stuff *)
 
-external atomic_or_fetch : Cstruct.buffer -> int -> int -> int = "stub_atomic_or_fetch_uint8"
-external atomic_fetch_and : Cstruct.buffer -> int -> int -> int = "stub_atomic_fetch_and_uint8"
+external atomic_or_fetch : Bytes.t -> int -> int -> int = "stub_atomic_or_fetch_uint8"
+external atomic_fetch_and : Bytes.t -> int -> int -> int = "stub_atomic_fetch_and_uint8"
 
 (* left is client write, server read
    right is client read, server write *)

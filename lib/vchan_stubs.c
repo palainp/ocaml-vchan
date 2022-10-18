@@ -25,10 +25,10 @@ CAMLprim value stub_atomic_or_fetch_uint8(value buf, value idx, value val)
   CAMLparam3(buf, idx, val);
   // Finding the address of buf+idx
   uint8_t c_val = (uint8_t)Int_val(val);
-  uint8_t *ptr = Caml_ba_data_val(buf) + Int_val(idx);
+  uint8_t *ptr = Bytes_val(buf) + Int_val(idx);
 
-  if (Int_val(idx) >= Caml_ba_array_val(buf)->dim[0])
-    caml_invalid_argument("idx");
+  // if (Int_val(idx) >= Caml_ba_array_val(buf)->dim[0])
+    // caml_invalid_argument("idx");
 
   CAMLreturn(Val_int((uint8_t)__sync_or_and_fetch(ptr, c_val)));
 }
@@ -37,10 +37,10 @@ CAMLprim value stub_atomic_fetch_and_uint8(value buf, value idx, value val)
 {
   CAMLparam3(buf, idx, val);
   uint8_t c_val = (uint8_t)Int_val(val);
-  uint8_t *ptr = Caml_ba_data_val(buf) + Int_val(idx);
+  uint8_t *ptr = Bytes_val(buf) + Int_val(idx);
 
-  if (Int_val(idx) >= Caml_ba_array_val(buf)->dim[0])
-    caml_invalid_argument("idx");
+  // if (Int_val(idx) >= Caml_ba_array_val(buf)->dim[0])
+    // caml_invalid_argument("idx");
 
   CAMLreturn(Val_int((uint8_t)__sync_fetch_and_and(ptr, c_val)));
 }
