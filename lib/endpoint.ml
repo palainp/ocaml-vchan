@@ -239,7 +239,7 @@ let request_notify (vch: t) rdwr =
   let open Cstruct in
   (* This should be correct: client -> srv_notify | server -> cli_notify *)
   let idx = match vch.role with Client _ -> 23 | Server _ -> 22 in
-  i_int (atomic_or_fetch vch.shared_page.buffer idx (bit_of_read_write rdwr))
+  i_int (atomic_or_fetch vch.shared_page idx (bit_of_read_write rdwr))
   (*; Xenctrl.xen_mb ()*)
 
 let send_notify (vch: t) rdwr =
@@ -250,7 +250,7 @@ let send_notify (vch: t) rdwr =
   let bit = bit_of_read_write rdwr in
   let prev =
     (* clear the bit and return previous value *)
-    atomic_fetch_and vch.shared_page.buffer idx (lnot bit) in
+    atomic_fetch_and vch.shared_page idx (lnot bit) in
   if prev land bit <> 0 then E.send vch.evtchn
 
 let fast_get_data_ready (vch: t) request =
