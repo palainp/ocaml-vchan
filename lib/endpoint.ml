@@ -20,6 +20,8 @@ let ( >>= ) = Lwt.bind
 
 let i_int (i:int) = ignore i
 
+type ba = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
 module Int32 = struct
   include Int32
 
@@ -34,8 +36,8 @@ end
 
 (* GCC atomic stuff *)
 
-external atomic_or_fetch : Cstruct.buffer -> int -> int -> int = "stub_atomic_or_fetch_uint8"
-external atomic_fetch_and : Cstruct.buffer -> int -> int -> int = "stub_atomic_fetch_and_uint8"
+external atomic_or_fetch : ba -> int -> int -> int = "stub_atomic_or_fetch_uint8"
+external atomic_fetch_and : ba -> int -> int -> int = "stub_atomic_fetch_and_uint8"
 
 (* left is client write, server read
    right is client read, server write *)
@@ -49,10 +51,10 @@ external atomic_fetch_and : Cstruct.buffer -> int -> int -> int = "stub_atomic_f
   prod: uint32_t;
    } [@@little_endian] *)
 
-let get_ring_shared_cons b = Cstruct.LE.get_uint32 b 0
-let set_ring_shared_cons b v = Cstruct.LE.set_uint32 b 0 v
-let get_ring_shared_prod b = Cstruct.LE.get_uint32 b 4
-let set_ring_shared_prod b v = Cstruct.LE.set_uint32 b 4 v
+let get_ring_shared_cons b = Io_page.get_le_uint32 b 0
+let set_ring_shared_cons b v = Io_page.set_le_uint32 b 0 v
+let get_ring_shared_prod b = Io_page.get_le_uint32 b 4
+let set_ring_shared_prod b v = Io_page.set_le_uint32 b 4 v
 
 (* matches xen/include/public/io/libxenvchan.h:vchan_interface *)
 (*[%%cstruct
@@ -69,20 +71,20 @@ type vchan_interface = {
 ]
 *)
 
-let get_vchan_interface_left v = Cstruct.sub v 0 8
-let get_vchan_interface_right v = Cstruct.sub v 8 8
-let get_vchan_interface_left_order v = Cstruct.LE.get_uint16 v 16
-let set_vchan_interface_left_order v d = Cstruct.LE.set_uint16 v 16 d
-let get_vchan_interface_right_order v = Cstruct.LE.get_uint16 v 18
-let set_vchan_interface_right_order v d = Cstruct.LE.set_uint16 v 18 d
-let get_vchan_interface_cli_live v = Cstruct.get_uint8 v 20
-let set_vchan_interface_cli_live v d = Cstruct.set_uint8 v 20 d
-let get_vchan_interface_srv_live v = Cstruct.get_uint8 v 21
-let set_vchan_interface_srv_live v d = Cstruct.set_uint8 v 21 d
-(* let get_vchan_interface_cli_notify v = Cstruct.get_uint8 v 22 *)
-let set_vchan_interface_cli_notify v d = Cstruct.set_uint8 v 22 d
-(* let get_vchan_interface_srv_notify v = Cstruct.get_uint8 v 23 *)
-let set_vchan_interface_srv_notify v d = Cstruct.set_uint8 v 23 d
+let get_vchan_interface_left v = Io_page.sub v 0 8
+let get_vchan_interface_right v = Io_page.sub v 8 8
+let get_vchan_interface_left_order v = Io_page.get_uint16 v 16
+let set_vchan_interface_left_order v d = Io_page.set_uint16 v 16 d
+let get_vchan_interface_right_order v = Io_page.get_uint16 v 18
+let set_vchan_interface_right_order v d = Io_page.set_uint16 v 18 d
+let get_vchan_interface_cli_live v = Io_page.get_uint8 v 20
+let set_vchan_interface_cli_live v d = Io_page.set_uint8 v 20 d
+let get_vchan_interface_srv_live v = Io_page.get_uint8 v 21
+let set_vchan_interface_srv_live v d = Io_page.set_uint8 v 21 d
+(* let get_vchan_interface_cli_notify v = Io_page.get_uint8 v 22 *)
+let set_vchan_interface_cli_notify v d = Io_page.set_uint8 v 22 d
+(* let get_vchan_interface_srv_notify v = Io_page.get_uint8 v 23 *)
+let set_vchan_interface_srv_notify v d = Io_page.set_uint8 v 23 d
 let sizeof_vchan_interface = 24
 
 let get_ro v = get_vchan_interface_right_order v
@@ -126,10 +128,10 @@ type role =
 type t = {
   remote_domid: int;
   remote_port: Port.t;
-  shared_page: Cstruct.t; (* the shared metadata *)
+  shared_page: Io_page.t; (* the shared metadata *)
   role: role;
-  read: Cstruct.t; (* the ring where you read data from *)
-  write: Cstruct.t; (* the ring where you write data to *)
+  read: Io_page.t; (* the ring where you read data from *)
+  write: Io_page.t; (* the ring where you write data to *)
   evtchn: E.channel; (* Event channel to notify the other end *)
   mutable token: E.event;
   mutable ack_up_to: int; (* FLOW reader has seen this much data *)
@@ -196,14 +198,12 @@ let rd_ring_size vch = match vch.role with
 (* Request notify to the other endpoint. If client, request to server,
    and vice versa. *)
 let request_notify (vch: t) rdwr =
-  let open Cstruct in
   (* This should be correct: client -> srv_notify | server -> cli_notify *)
   let idx = match vch.role with Client _ -> 23 | Server _ -> 22 in
   i_int (atomic_or_fetch vch.shared_page.buffer idx (bit_of_read_write rdwr))
   (*; Xenctrl.xen_mb ()*)
 
 let send_notify (vch: t) rdwr =
-  let open Cstruct in
   (*Xenctrl.xen_mb ();*)
   (* This should be correct: client -> cli_notify | server -> srv_notify *)
   let idx = match vch.role with Client _ -> 22 | Server _ -> 23 in
@@ -239,27 +239,27 @@ let state vch =
 
 (* Write as much data as we can without blocking *)
 let _write_noblock vch buf =
-  let len = Cstruct.length buf in
+  let len = Io_page.length buf in
   let real_idx = Int32.(logand (wr_prod vch) (of_int (wr_ring_size vch) - 1l) |> to_int) in
   let avail_contig = wr_ring_size vch - real_idx in
   let avail_contig = if avail_contig > len then len else avail_contig in
   (*Xenctrl.xen_mb ();*)
-  Cstruct.blit buf 0 vch.write real_idx avail_contig;
+  Io_page.blit buf 0 vch.write real_idx avail_contig;
   (if avail_contig < len then (* We rolled across the end of the ring *)
-    Cstruct.blit buf avail_contig vch.write 0 (len - avail_contig));
+    Io_page.blit buf avail_contig vch.write 0 (len - avail_contig));
   (*Xenctrl.xen_wmb ();*)
   set_wr_prod vch Int32.(wr_prod vch + of_int len);
   send_notify vch Write
 
 (* Write a whole buffer in a blocking fashion *)
 let write vch buf =
-  let len = Cstruct.length buf in
+  let len = Io_page.length buf in
   let rec inner pos event =
     if state vch <> Connected
     then Lwt.return @@ Error `Closed
     else
       let avail = min (fast_get_buffer_space vch (len - pos)) (len - pos) in
-      if avail > 0 then _write_noblock vch (Cstruct.sub buf pos avail);
+      if avail > 0 then _write_noblock vch (Io_page.sub buf pos avail);
       let pos = pos + avail in
       if pos = len
       then Lwt.return @@ Ok ()
@@ -291,10 +291,10 @@ let rec _read_one vch event =
       let buf =
         if bytes_before_wraparound = 0 then begin
           (* all bytes are in a contiguous block starting at 0 *)
-          Cstruct.sub vch.read 0 avail
+          Io_page.sub vch.read 0 avail
         end else begin
           (* we'll only consume the bytes before wraparound on this iteration *)
-          Cstruct.sub vch.read real_idx (min avail bytes_before_wraparound)
+          Io_page.sub vch.read real_idx (min avail bytes_before_wraparound)
         end in
       Lwt.return (`Ok buf)
 
@@ -306,7 +306,7 @@ let read vch =
   _read_one vch E.initial >>= function
   | `Ok buf ->
     (* we'll signal the remote we've consumed this data on the next iteration *)
-    vch.ack_up_to <- vch.ack_up_to + (Cstruct.length buf);
+    vch.ack_up_to <- vch.ack_up_to + (Io_page.length buf);
     Lwt.return @@ Ok (`Data buf)
   | `Eof -> Lwt.return @@ Ok `Eof
   | `Error m -> Lwt.return (Error m)
@@ -325,7 +325,7 @@ let server ~domid ~port ?(read_size=1024) ?(write_size=1024) () =
 
   (* Allocate and initialise the shared page *)
   let shr_shr = M.share ~domid ~npages:1 ~rw:true in
-  let v = Io_page.to_cstruct (M.buf_of_share shr_shr) in
+  let v = M.buf_of_share shr_shr in
   set_lc v 0l;
   set_lp v 0l;
   set_rc v 0l;
@@ -342,11 +342,11 @@ let server ~domid ~port ?(read_size=1024) ?(write_size=1024) () =
 
   let allocate_locations l = match l with
   | Location.Within_shared_page offset ->
-    None, Cstruct.sub v (Location.to_offset offset) (Location.to_length l)
+    None, Io_page.sub v (Location.to_offset offset) (Location.to_length l)
   | Location.External n ->
     let share = M.share ~domid ~npages:(1 lsl n) ~rw:true in
     let pages = M.buf_of_share share in
-    Some share, Io_page.to_cstruct pages in
+    Some share, pages in
 
   let read_shr, read_buf = allocate_locations read_l in
   let write_shr, write_buf = allocate_locations write_l in
@@ -355,12 +355,12 @@ let server ~domid ~port ?(read_size=1024) ?(write_size=1024) () =
   (* Write the gntrefs to the shared page. Ordering is left, right. *)
   List.iteri
     (fun i ref ->
-       Cstruct.LE.set_uint32 v (sizeof_vchan_interface+i*4) (M.int32_of_grant ref))
+       Io_page.set_le_uint32 v (sizeof_vchan_interface+i*4) (M.int32_of_grant ref))
     (match read_shr with None -> [] | Some shr -> M.grants_of_share shr);
 
   List.iteri
     (fun i ref ->
-       Cstruct.LE.set_uint32 v (sizeof_vchan_interface+(i+nb_read_pages)*4)
+       Io_page.set_le_uint32 v (sizeof_vchan_interface+(i+nb_read_pages)*4)
          (M.int32_of_grant ref))
     (match write_shr with None -> [] | Some shr -> M.grants_of_share shr);
 
@@ -403,7 +403,7 @@ let client ~domid ~port () =
 
   (* Map the vchan interface page *)
   let mapping = M.map ~domid ~grant:(M.grant_of_int32 (Int32.of_string gntref)) ~rw:true in
-  let v = Io_page.to_cstruct (M.buf_of_mapping mapping) in
+  let v = M.buf_of_mapping mapping in
 
   Location.of_order (get_lo v)
   >>|= fun lo ->
@@ -421,7 +421,7 @@ let client ~domid ~port () =
     Array.init nb
       (fun i ->
         (offset + i * 4)
-        |> Cstruct.LE.get_uint32 v
+        |> Io_page.get_le_uint32 v
         |> M.grant_of_int32
       )
    |> Array.to_list
@@ -431,10 +431,10 @@ let client ~domid ~port () =
 
   let map_locations grants l = match l with
   | Location.Within_shared_page offset ->
-    None, Cstruct.sub v (Location.to_offset offset) (Location.to_length l)
+    None, Io_page.sub v (Location.to_offset offset) (Location.to_length l)
   | Location.External _n ->
     let mapping = M.mapv ~grants ~rw:true in
-    Some mapping, Io_page.to_cstruct (M.buf_of_mapping mapping) in
+    Some mapping, M.buf_of_mapping mapping in
   let w_map, w_buf = map_locations lgrants lo in
   let r_map, r_buf = map_locations rgrants ro in
 

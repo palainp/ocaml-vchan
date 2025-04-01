@@ -1,5 +1,5 @@
 (library
  (name vchan)
  (public_name vchan)
- (libraries lwt cstruct io-page mirage-flow xenstore.client)
+ (libraries lwt io-page mirage-flow xenstore.client)
  (c_names vchan_stubs))

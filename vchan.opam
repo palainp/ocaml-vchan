@@ -16,7 +16,6 @@ depends: [
   "ocaml" {>= "4.08.0"}
   "dune"
   "lwt" {>= "2.5.0"}
-  "cstruct" {>= "6.0.0"}
   "io-page"
   "mirage-flow" {>= "4.0.0"}
   "xenstore" {>= "1.2.2"}

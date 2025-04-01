@@ -12,7 +12,6 @@ depends: [
   "dune"
   "vchan" {=version}
   "lwt" {>= "2.5.0"}
-  "cstruct" {>= "1.9.0"}
   "io-page"
   "mirage-flow" {>= "2.0.0"}
   "xenstore" {>= "1.2.2"}

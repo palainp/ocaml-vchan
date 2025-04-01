@@ -79,7 +79,7 @@ module Memory = struct
   let big_mapping = Hashtbl.create 16
 
   let share ~domid:_ ~npages ~rw:_ =
-    let mapping = Io_page.get npages in
+    let mapping = Io_page.get ~n:npages () in
     let grants = get_n npages in
     let share = { grants; mapping } in
     let pages = Io_page.to_pages mapping in

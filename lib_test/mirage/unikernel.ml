@@ -32,7 +32,7 @@ module Server (C: Mirage_console_lwt.S) = struct
     | Ok `Eof -> OS.Time.sleep_ns (Duration.of_sec 5) >>= fun () -> C.log c "EOF"
     | Error _ -> OS.Time.sleep_ns (Duration.of_sec 5) >>= fun () -> C.log c "ERR"
     | Ok (`Data buf) ->
-      let s = Cstruct.to_string buf in
+      let s = Io_page.to_string buf in
       C.log c s >>= fun () ->
       read_all c t
 
@@ -87,11 +87,11 @@ module Client (C: Mirage_console_lwt.S) = struct
       >>= fun t ->
       C.log c "Client connected" >>= fun () ->
       let rec write num =
-        let buf = Io_page.(to_cstruct (get 1)) in
+        let page = Io_page.get ~n:1 in
         let s = sprintf "num is %d" num in
         let len = String.length s in
-        Cstruct.blit_from_string s 0 buf 0 len;
-        let buf = Cstruct.sub buf 0 len in
+        Io_page.string_blit s 0 page 0 len;
+        let buf = Io_page.sub buf 0 len in
         VX.write t buf
         >>= function
         | Error _ -> OS.Time.sleep_ns (Duration.of_sec 5) >>= fun () -> C.log c "ERR"

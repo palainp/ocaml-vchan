@@ -75,11 +75,12 @@ let (>>!=) m f = m >>= function
 | Ok `Eof -> fail_with "EOF encountered when more data was expected"
 | Error e -> Fmt.kstr fail_with "%a" V.pp_error e
 
-let cstruct_of_string s =
-  let cstr = Cstruct.create (String.length s) in
-  Cstruct.blit_from_string s 0 cstr 0 (String.length s);
-  cstr
-let string_of_cstruct c = String.escaped (Cstruct.to_string c)
+let page_of_string s =
+  (* Here we suppose the string is small enough to fit into a page *)
+  let page = Io_page.get ~n:1 in
+  Io_page.string_blit s 0 page 0 (String.length s);
+  page
+let string_of_page c = String.escaped (Io_page.to_string c)
 
 let with_connection read_size write_size f =
   let server_t = V.server ~domid:1 ~port ~read_size ~write_size () in
@@ -105,12 +106,12 @@ let test_write_read (read_size, write_size) =
     Lwt_main.run (
       with_connection read_size write_size
         (fun client server ->
-          V.write server (cstruct_of_string "hello") >>|= fun () ->
+          V.write server (page_of_string "hello") >>|= fun () ->
           V.read client >>!= fun buf ->
-          assert_equal ~printer:(fun x -> x) "hello" (string_of_cstruct buf);
-          V.write client (cstruct_of_string "vchan world") >>|= fun () ->
+          assert_equal ~printer:(fun x -> x) "hello" (string_of_page buf);
+          V.write client (page_of_string "vchan world") >>|= fun () ->
           V.read server >>!= fun buf ->
-          assert_equal ~printer:(fun x -> x) "vchan world" (string_of_cstruct buf);
+          assert_equal ~printer:(fun x -> x) "vchan world" (string_of_page buf);
           return ()
         )
     );
@@ -124,13 +125,13 @@ let test_read_write (read_size, write_size) =
       with_connection read_size write_size
         (fun client server ->
           let read_t = V.read client in
-          V.write server (cstruct_of_string "hello") >>|= fun () ->
+          V.write server (page_of_string "hello") >>|= fun () ->
           read_t >>!= fun buf ->
-          assert_equal ~printer:(fun x -> x) "hello" (string_of_cstruct buf);
+          assert_equal ~printer:(fun x -> x) "hello" (string_of_page buf);
           let read_t = V.read server in
-          V.write client (cstruct_of_string "vchan world") >>|= fun () ->
+          V.write client (page_of_string "vchan world") >>|= fun () ->
           read_t >>!= fun buf ->
-          assert_equal ~printer:(fun x -> x) "vchan world" (string_of_cstruct buf);
+          assert_equal ~printer:(fun x -> x) "vchan world" (string_of_page buf);
           return ()
         )
     );
@@ -142,23 +143,23 @@ let test_write_wraps () = Lwt_main.run (
   let size = 4096 in (* guaranteed to be exact via grant refs *)
   with_connection size size
     (fun client server ->
+      let ring = Io_page.get ~n:1 () in
       (* leave 2 bytes free at the end of the ring *)
-      let ring = Cstruct.create (size - 2) in
-      for i = 0 to Cstruct.length ring - 1 do Cstruct.set_char ring i 'X' done;
+      for i = 0 to Io_page.length ring - 3 do Io_page.set_char ring i 0x58 (* 'X' *) done;
       V.write server ring >>|= fun () ->
       V.read client >>!= fun buf ->
-      assert_equal ~printer:(fun x -> x) (string_of_cstruct ring) (string_of_cstruct buf);
+      assert_equal ~printer:(fun x -> x) (string_of_page ring) (string_of_page buf);
       (* writing and reading 1 byte will ensure we have consumed the previous chunk
          (read doesn't perform a copy, see ack_up_to) *)
-      V.write server (cstruct_of_string "!") >>|= fun () ->
+      V.write server (page_of_string "!") >>|= fun () ->
       V.read client >>!= fun buf ->
-      assert_equal ~printer:(fun x -> x) "!" (string_of_cstruct buf);
+      assert_equal ~printer:(fun x -> x) "!" (string_of_page buf);
       (* there's 1 byte free before wraparound *)
-      V.write server (cstruct_of_string "hello") >>|= fun () ->
+      V.write server (page_of_string "hello") >>|= fun () ->
       V.read client >>!= fun buf' ->
-      assert_equal ~printer:(fun x -> x) "h" (string_of_cstruct buf');
+      assert_equal ~printer:(fun x -> x) "h" (string_of_page buf');
       V.read client >>!= fun buf'' ->
-      assert_equal ~printer:(fun x -> x) "ello" (string_of_cstruct buf'');
+      assert_equal ~printer:(fun x -> x) "ello" (string_of_page buf'');
       return ()
     )
 ); V.assert_cleaned_up ()
