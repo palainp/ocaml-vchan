@@ -253,6 +253,7 @@ let _write_noblock vch buf =
 
 (* Write a whole buffer in a blocking fashion *)
 let write vch buf =
+  let buf = Io_page.of_bigarray (Cstruct.to_bigarray buf) in
   let len = Io_page.length buf in
   let rec inner pos event =
     if state vch <> Connected
@@ -307,7 +308,8 @@ let read vch =
   | `Ok buf ->
     (* we'll signal the remote we've consumed this data on the next iteration *)
     vch.ack_up_to <- vch.ack_up_to + (Io_page.length buf);
-    Lwt.return @@ Ok (`Data buf)
+    let cs = Cstruct.of_bigarray buf.buffer in
+    Lwt.return @@ Ok (`Data cs)
   | `Eof -> Lwt.return @@ Ok `Eof
   | `Error m -> Lwt.return (Error m)
 
