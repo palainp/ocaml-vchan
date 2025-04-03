@@ -73,10 +73,10 @@ type vchan_interface = {
 
 let get_vchan_interface_left v = Io_page.sub v 0 8
 let get_vchan_interface_right v = Io_page.sub v 8 8
-let get_vchan_interface_left_order v = Io_page.get_uint16 v 16
-let set_vchan_interface_left_order v d = Io_page.set_uint16 v 16 d
-let get_vchan_interface_right_order v = Io_page.get_uint16 v 18
-let set_vchan_interface_right_order v d = Io_page.set_uint16 v 18 d
+let get_vchan_interface_left_order v = Io_page.get_le_uint16 v 16
+let set_vchan_interface_left_order v d = Io_page.set_le_uint16 v 16 d
+let get_vchan_interface_right_order v = Io_page.get_le_uint16 v 18
+let set_vchan_interface_right_order v d = Io_page.set_le_uint16 v 18 d
 let get_vchan_interface_cli_live v = Io_page.get_uint8 v 20
 let set_vchan_interface_cli_live v d = Io_page.set_uint8 v 20 d
 let get_vchan_interface_srv_live v = Io_page.get_uint8 v 21
